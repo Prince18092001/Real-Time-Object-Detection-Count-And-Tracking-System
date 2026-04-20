@@ -1,12 +1,12 @@
 # Real-Time Object Detection, Count & Tracking System
 
-This project provides a Streamlit dashboard for running real-time object detection and tracking with YOLO.
+This project provides a Streamlit dashboard for running real-time object detection and tracking with OpenCV DNN.
 
 ## Features
 
 - Streamlit dashboard with source selection
 - Webcam and uploaded video input options
-- Real-time object detection and tracking
+- Real-time object detection and centroid-based tracking
 - Per-class counts and track IDs
 - Line-crossing counter for simple counting analytics
 
@@ -27,5 +27,5 @@ streamlit run app.py
 
 ## Notes
 
-- The first run may download YOLO weights automatically.
+- The first run downloads the MobileNet-SSD model files automatically.
 - On Windows, webcam access usually works best when no other app is using the camera.

@@ -151,7 +151,7 @@ def main() -> None:
     if DETECTION_IMPORT_ERROR is not None:
         st.error("Detection module failed to import.")
         st.code(DETECTION_IMPORT_ERROR)
-        st.info("Check ultralytics/torch/OpenCV dependency versions and redeploy.")
+        st.info("Check OpenCV/Numpy dependency versions and redeploy.")
         st.stop()
 
     st.markdown(
@@ -177,7 +177,7 @@ def main() -> None:
     confidence = st.sidebar.slider("Confidence threshold", 0.1, 0.9, 0.45, 0.05)
     image_size = st.sidebar.selectbox("Inference size", [640, 768, 960], index=0)
     line_position = st.sidebar.slider("Counting line position", 0.2, 0.8, 0.5, 0.05)
-    tracker_name = st.sidebar.selectbox("Tracker", ["bytetrack.yaml", "botsort.yaml"], index=0)
+    max_track_distance = st.sidebar.slider("Tracking distance", 20, 120, 60, 5)
 
     st.sidebar.markdown(
         """
@@ -277,7 +277,7 @@ def main() -> None:
                 confidence=confidence,
                 image_size=image_size,
                 line_position=line_position,
-                tracker_name=tracker_name,
+                max_track_distance=max_track_distance,
             )
 
             frame_counter += 1
