@@ -4,7 +4,6 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 CV2_IMPORT_ERROR: str | None = None
@@ -299,9 +298,7 @@ def main() -> None:
             with metrics_block.container():
                 render_metrics(st.session_state["last_stats"])
 
-        st.session_state["summary_data"] = pd.DataFrame(
-            {"class": list(frame_histogram.keys()), "count": list(frame_histogram.values())}
-        )
+        st.session_state["summary_data"] = dict(frame_histogram)
         st.success("Detection finished.")
     finally:
         if capture is not None:
@@ -309,9 +306,9 @@ def main() -> None:
         if temp_path is not None and temp_path.exists():
             temp_path.unlink(missing_ok=True)
 
-    if "summary_data" in st.session_state and not st.session_state["summary_data"].empty:
+    if "summary_data" in st.session_state and st.session_state["summary_data"]:
         st.subheader("Class summary")
-        st.bar_chart(st.session_state["summary_data"].set_index("class"))
+        st.bar_chart(st.session_state["summary_data"])
 
 
 if __name__ == "__main__":
