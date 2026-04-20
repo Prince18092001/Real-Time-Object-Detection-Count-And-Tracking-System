@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import platform
+import time
+from threading import Lock
 from collections import Counter
 
 import streamlit as st
@@ -20,6 +22,16 @@ except Exception as exc:  # pragma: no cover - environment specific
     load_model = None
     process_frame = None
     DETECTION_IMPORT_ERROR = str(exc)
+
+WEBRTC_IMPORT_ERROR: str | None = None
+try:
+    import av
+    from streamlit_webrtc import WebRtcMode, webrtc_streamer
+except Exception as exc:  # pragma: no cover - environment specific
+    av = None
+    WebRtcMode = None
+    webrtc_streamer = None
+    WEBRTC_IMPORT_ERROR = str(exc)
 
 
 st.set_page_config(
@@ -136,6 +148,11 @@ def main() -> None:
     )
 
     st.sidebar.header("Run Controls")
+    camera_backend_options = ["Browser camera (WebRTC)"]
+    if supports_webcam_mode():
+        camera_backend_options.append("Device camera (OpenCV)")
+    camera_backend = st.sidebar.selectbox("Camera backend", camera_backend_options)
+
     st.sidebar.subheader("Live Camera")
     camera_index = st.sidebar.number_input("Camera index", min_value=0, max_value=5, value=0, step=1)
     confidence = st.sidebar.slider("Confidence threshold", 0.1, 0.9, 0.45, 0.05)
@@ -144,8 +161,8 @@ def main() -> None:
     max_track_distance = st.sidebar.slider("Tracking distance", 20, 120, 60, 5)
 
     guidance = (
-        "Webcam mode is available only when running this app on Windows."
-        if not supports_webcam_mode()
+        "Allow browser camera permission and click Start in the camera panel below."
+        if camera_backend == "Browser camera (WebRTC)"
         else "Press Start detection to open the camera directly. Ensure no other app is using it."
     )
     st.sidebar.markdown(
@@ -157,7 +174,7 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    run_button = st.sidebar.button("Start detection")
+    run_button = camera_backend == "Device camera (OpenCV)" and st.sidebar.button("Start detection")
     reset_button = st.sidebar.button("Reset counters")
 
     metrics_block = st.empty()
@@ -188,8 +205,9 @@ def main() -> None:
             <div class="hero-card">
                 <h3 style="margin-top:0;color:#f8fafc;">Dashboard Guide</h3>
                 <ol style="color:#cbd5e1;line-height:1.75;padding-left:1.2rem;">
+                    <li>Select Browser camera (WebRTC) for cloud deployment.</li>
                     <li>Set camera index and detection parameters in the sidebar.</li>
-                    <li>Press Start detection to open the camera feed.</li>
+                    <li>Use Start detection for OpenCV mode or Start in the WebRTC panel.</li>
                     <li>Review the live frame, counts, IDs, and crossing analytics.</li>
                 </ol>
             </div>
@@ -197,7 +215,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    if not run_button:
+    if camera_backend == "Device camera (OpenCV)" and not run_button:
         st.info("Press Start detection to open the camera and run real-time tracking.")
         return
 
@@ -207,6 +225,61 @@ def main() -> None:
         st.error("Model download/load failed.")
         st.code(str(exc))
         st.info("Redeploy and retry. If this persists, check outbound internet access for GitHub/CDN URLs.")
+        return
+
+    if camera_backend == "Browser camera (WebRTC)":
+        if WEBRTC_IMPORT_ERROR is not None:
+            st.error("Browser camera dependencies failed to import.")
+            st.code(WEBRTC_IMPORT_ERROR)
+            st.info("Install streamlit-webrtc in requirements.txt and redeploy.")
+            return
+
+        webrtc_stats = {"frame_count": 0, "tracked_ids": 0, "line_count": 0, "fps": 0.0}
+        stats_lock = Lock()
+        fps_state = {"last_ts": time.perf_counter()}
+
+        def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
+            image = frame.to_ndarray(format="bgr24")
+            annotated, stats = process_frame(
+                frame=image,
+                model=model,
+                state=state,
+                confidence=confidence,
+                image_size=image_size,
+                line_position=line_position,
+                max_track_distance=max_track_distance,
+            )
+
+            now = time.perf_counter()
+            elapsed = now - fps_state["last_ts"]
+            fps_state["last_ts"] = now
+            fps = (1.0 / elapsed) if elapsed > 0 else 0.0
+
+            with stats_lock:
+                webrtc_stats["frame_count"] = int(stats.get("frame_count", 0))
+                webrtc_stats["tracked_ids"] = len(state.active_ids)
+                webrtc_stats["line_count"] = state.line_cross_count
+                webrtc_stats["fps"] = fps
+
+            return av.VideoFrame.from_ndarray(annotated, format="bgr24")
+
+        with left_col:
+            webrtc_ctx = webrtc_streamer(
+                key="realtime-object-detection-webrtc",
+                mode=WebRtcMode.SENDRECV,
+                media_stream_constraints={"video": True, "audio": False},
+                rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+                video_frame_callback=video_frame_callback,
+                async_processing=True,
+            )
+
+        if webrtc_ctx.state.playing:
+            status_placeholder.caption("Browser camera is live. Detection overlay is running in real time.")
+            with stats_lock:
+                with metrics_block.container():
+                    render_metrics(webrtc_stats)
+        else:
+            status_placeholder.info("Click Start in the WebRTC panel to begin real-time detection.")
         return
 
     if platform.system() == "Windows":
