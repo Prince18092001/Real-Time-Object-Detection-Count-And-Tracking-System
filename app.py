@@ -5,6 +5,7 @@ import time
 from threading import Lock
 from collections import Counter
 
+import numpy as np
 import streamlit as st
 
 CV2_IMPORT_ERROR: str | None = None
@@ -148,10 +149,10 @@ def main() -> None:
     )
 
     st.sidebar.header("Run Controls")
-    camera_backend_options = ["Browser camera (WebRTC)"]
+    camera_backend_options = ["Browser camera (snapshot)", "Browser camera (WebRTC)"]
     if supports_webcam_mode():
         camera_backend_options.append("Device camera (OpenCV)")
-    camera_backend = st.sidebar.selectbox("Camera backend", camera_backend_options)
+    camera_backend = st.sidebar.selectbox("Camera backend", camera_backend_options, index=0)
 
     st.sidebar.subheader("Live Camera")
     camera_index = 0
@@ -166,6 +167,9 @@ def main() -> None:
     max_track_distance = st.sidebar.slider("Tracking distance", 20, 120, 60, 5)
 
     guidance = (
+        "Use the snapshot camera mode for the most reliable browser camera access on Streamlit Cloud."
+        if camera_backend == "Browser camera (snapshot)"
+        else
         "Allow browser camera permission and click Start in the camera panel below. WebRTC runs at lower resolution/FPS for stability."
         if camera_backend == "Browser camera (WebRTC)"
         else "Press Start detection to open the camera directly. Ensure no other app is using it."
@@ -210,7 +214,8 @@ def main() -> None:
             <div class="hero-card">
                 <h3 style="margin-top:0;color:#f8fafc;">Dashboard Guide</h3>
                 <ol style="color:#cbd5e1;line-height:1.75;padding-left:1.2rem;">
-                    <li>Select Browser camera (WebRTC) for cloud deployment.</li>
+                    <li>Use Browser camera (snapshot) for the most reliable cloud camera access.</li>
+                    <li>Use Browser camera (WebRTC) only when your network allows STUN/TURN connectivity.</li>
                     <li>Set camera index and detection parameters in the sidebar.</li>
                     <li>Use Start detection for OpenCV mode or Start in the WebRTC panel.</li>
                     <li>Review the live frame, counts, IDs, and crossing analytics.</li>
@@ -230,6 +235,41 @@ def main() -> None:
         st.error("Model download/load failed.")
         st.code(str(exc))
         st.info("Redeploy and retry. If this persists, check outbound internet access for GitHub/CDN URLs.")
+        return
+
+    if camera_backend == "Browser camera (snapshot)":
+        camera_image = st.camera_input("Browser camera snapshot", key="snapshot-camera")
+        if camera_image is None:
+            status_placeholder.info("Open camera and capture an image to run detection.")
+            return
+
+        image_bytes = np.frombuffer(camera_image.getvalue(), dtype=np.uint8)
+        frame = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+        if frame is None:
+            st.error("Could not decode the captured image frame.")
+            return
+
+        annotated, stats = process_frame(
+            frame=frame,
+            model=model,
+            state=state,
+            confidence=confidence,
+            image_size=image_size,
+            line_position=line_position,
+            max_track_distance=max_track_distance,
+        )
+
+        frame_placeholder.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
+        st.session_state["last_stats"] = {
+            "frame_count": int(stats.get("frame_count", 0)),
+            "tracked_ids": len(state.active_ids),
+            "line_count": state.line_cross_count,
+            "fps": 0.0,
+        }
+        with metrics_block.container():
+            render_metrics(st.session_state["last_stats"])
+
+        status_placeholder.success("Processed current camera snapshot.")
         return
 
     if camera_backend == "Browser camera (WebRTC)":
