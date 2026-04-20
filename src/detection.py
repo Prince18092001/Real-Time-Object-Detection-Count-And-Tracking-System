@@ -35,16 +35,17 @@ CLASSES = [
 ]
 
 MODEL_DIR = Path("models")
-PROTO_PATH = MODEL_DIR / "MobileNetSSD_deploy.prototxt"
-WEIGHTS_PATH = MODEL_DIR / "MobileNetSSD_deploy.caffemodel"
+PROTO_PATH = MODEL_DIR / "deploy.prototxt"
+WEIGHTS_PATH = MODEL_DIR / "mobilenet_iter_73000.caffemodel"
 
 PROTO_URLS = (
-    "https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNetSSD_deploy.prototxt",
-    "https://cdn.jsdelivr.net/gh/chuanqi305/MobileNet-SSD/MobileNetSSD_deploy.prototxt",
+    "https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/deploy.prototxt",
+    "https://cdn.jsdelivr.net/gh/chuanqi305/MobileNet-SSD/deploy.prototxt",
+    "https://github.com/chuanqi305/MobileNet-SSD/raw/master/deploy.prototxt",
 )
 WEIGHTS_URLS = (
-    "https://github.com/chuanqi305/MobileNet-SSD/raw/master/MobileNetSSD_deploy.caffemodel",
-    "https://cdn.jsdelivr.net/gh/chuanqi305/MobileNet-SSD/MobileNetSSD_deploy.caffemodel",
+    "https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/mobilenet_iter_73000.caffemodel",
+    "https://github.com/chuanqi305/MobileNet-SSD/raw/master/mobilenet_iter_73000.caffemodel",
 )
 
 
