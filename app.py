@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import platform
 import tempfile
 from collections import Counter
 from pathlib import Path
@@ -138,6 +140,10 @@ def render_metrics(stats: dict[str, int | float]) -> None:
             )
 
 
+def is_streamlit_cloud() -> bool:
+    return bool(os.getenv("STREAMLIT_SHARING_MODE"))
+
+
 def main() -> None:
     inject_styles()
 
@@ -168,9 +174,10 @@ def main() -> None:
     )
 
     st.sidebar.header("Run Controls")
+    source_options = ["Uploaded video"] if is_streamlit_cloud() else ["Webcam", "Uploaded video"]
     source_mode = st.sidebar.selectbox(
         "Input source",
-        ["Webcam", "Uploaded video"],
+        source_options,
         help="Choose where the project should run from inside the dashboard.",
     )
     confidence = st.sidebar.slider("Confidence threshold", 0.1, 0.9, 0.45, 0.05)
@@ -178,10 +185,15 @@ def main() -> None:
     line_position = st.sidebar.slider("Counting line position", 0.2, 0.8, 0.5, 0.05)
     max_track_distance = st.sidebar.slider("Tracking distance", 20, 120, 60, 5)
 
+    guidance = (
+        "Webcam mode is not available on Streamlit Cloud. Upload a video file to run detection."
+        if is_streamlit_cloud()
+        else "Start the run after choosing the source. For webcam mode, ensure another app is not using the camera."
+    )
     st.sidebar.markdown(
-        """
+        f"""
         <div class="small-note">
-        Start the run after choosing the source. For webcam mode, ensure another app is not using the camera.
+        {guidance}
         </div>
         """,
         unsafe_allow_html=True,
@@ -251,9 +263,15 @@ def main() -> None:
     temp_path: Path | None = None
 
     if source_mode == "Webcam":
-        capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        if platform.system() == "Windows":
+            capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        else:
+            capture = cv2.VideoCapture(0)
         if not capture.isOpened():
-            st.error("Could not access the webcam. Close other apps using the camera and try again.")
+            if is_streamlit_cloud():
+                st.error("Webcam is not available in Streamlit Cloud. Please use Uploaded video mode.")
+            else:
+                st.error("Could not access the webcam. Close other apps using the camera and try again.")
             return
     elif source_mode == "Uploaded video":
         if uploaded_path is None:
