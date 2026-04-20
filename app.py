@@ -4,12 +4,24 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-import cv2
-import numpy as np
 import pandas as pd
 import streamlit as st
 
-from src.detection import DetectionState, load_model, process_frame
+CV2_IMPORT_ERROR: str | None = None
+try:
+    import cv2
+except Exception as exc:  # pragma: no cover - environment specific
+    cv2 = None
+    CV2_IMPORT_ERROR = str(exc)
+
+DETECTION_IMPORT_ERROR: str | None = None
+try:
+    from src.detection import DetectionState, load_model, process_frame
+except Exception as exc:  # pragma: no cover - environment specific
+    DetectionState = None
+    load_model = None
+    process_frame = None
+    DETECTION_IMPORT_ERROR = str(exc)
 
 
 st.set_page_config(
@@ -129,6 +141,18 @@ def render_metrics(stats: dict[str, int | float]) -> None:
 
 def main() -> None:
     inject_styles()
+
+    if CV2_IMPORT_ERROR is not None:
+        st.error("OpenCV failed to import in this deployment environment.")
+        st.code(CV2_IMPORT_ERROR)
+        st.info("Install opencv-python-headless in requirements.txt and redeploy.")
+        st.stop()
+
+    if DETECTION_IMPORT_ERROR is not None:
+        st.error("Detection module failed to import.")
+        st.code(DETECTION_IMPORT_ERROR)
+        st.info("Check ultralytics/torch/OpenCV dependency versions and redeploy.")
+        st.stop()
 
     st.markdown(
         """
