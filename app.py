@@ -140,8 +140,8 @@ def render_metrics(stats: dict[str, int | float]) -> None:
             )
 
 
-def is_streamlit_cloud() -> bool:
-    return bool(os.getenv("STREAMLIT_SHARING_MODE"))
+def supports_webcam_mode() -> bool:
+    return platform.system() == "Windows"
 
 
 def main() -> None:
@@ -174,7 +174,7 @@ def main() -> None:
     )
 
     st.sidebar.header("Run Controls")
-    source_options = ["Uploaded video"] if is_streamlit_cloud() else ["Webcam", "Uploaded video"]
+    source_options = ["Webcam", "Uploaded video"] if supports_webcam_mode() else ["Uploaded video"]
     source_mode = st.sidebar.selectbox(
         "Input source",
         source_options,
@@ -186,8 +186,8 @@ def main() -> None:
     max_track_distance = st.sidebar.slider("Tracking distance", 20, 120, 60, 5)
 
     guidance = (
-        "Webcam mode is not available on Streamlit Cloud. Upload a video file to run detection."
-        if is_streamlit_cloud()
+        "Webcam mode is available only when running this app on Windows. Upload a video file to run detection here."
+        if not supports_webcam_mode()
         else "Start the run after choosing the source. For webcam mode, ensure another app is not using the camera."
     )
     st.sidebar.markdown(
@@ -268,10 +268,7 @@ def main() -> None:
         else:
             capture = cv2.VideoCapture(0)
         if not capture.isOpened():
-            if is_streamlit_cloud():
-                st.error("Webcam is not available in Streamlit Cloud. Please use Uploaded video mode.")
-            else:
-                st.error("Could not access the webcam. Close other apps using the camera and try again.")
+            st.error("Could not access the webcam. Close other apps using the camera and try again.")
             return
     elif source_mode == "Uploaded video":
         if uploaded_path is None:
