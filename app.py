@@ -158,14 +158,14 @@ def main() -> None:
     if camera_backend == "Device camera (OpenCV)":
         camera_index = st.sidebar.number_input("Camera index", min_value=0, max_value=5, value=0, step=1)
 
-    process_every_n = st.sidebar.slider("Process every N frames", min_value=1, max_value=4, value=1, step=1)
+    process_every_n = st.sidebar.slider("Process every N frames", min_value=1, max_value=3, value=2, step=1)
     confidence = st.sidebar.slider("Confidence threshold", 0.1, 0.9, 0.45, 0.05)
     image_size = st.sidebar.selectbox("Inference size", [640, 768, 960], index=0)
     line_position = st.sidebar.slider("Counting line position", 0.2, 0.8, 0.5, 0.05)
     max_track_distance = st.sidebar.slider("Tracking distance", 20, 120, 60, 5)
 
     guidance = (
-        "Allow browser camera permission and click Start in the camera panel below."
+        "Allow browser camera permission and click Start in the camera panel below. Processing every 2 frames is the default for smoother live video."
         if camera_backend == "Browser camera (WebRTC)"
         else "Press Start detection to open the camera directly. Ensure no other app is using it."
     )
