@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import platform
-import time
-from threading import Lock
 from collections import Counter
 
-import numpy as np
 import streamlit as st
 
 CV2_IMPORT_ERROR: str | None = None
@@ -23,16 +20,6 @@ except Exception as exc:  # pragma: no cover - environment specific
     load_model = None
     process_frame = None
     DETECTION_IMPORT_ERROR = str(exc)
-
-WEBRTC_IMPORT_ERROR: str | None = None
-try:
-    import av
-    from streamlit_webrtc import WebRtcMode, webrtc_streamer
-except Exception as exc:  # pragma: no cover - environment specific
-    av = None
-    WebRtcMode = None
-    webrtc_streamer = None
-    WEBRTC_IMPORT_ERROR = str(exc)
 
 
 st.set_page_config(
@@ -115,10 +102,6 @@ def render_metrics(stats: dict[str, int | float]) -> None:
             )
 
 
-def supports_webcam_mode() -> bool:
-    return platform.system() == "Windows"
-
-
 def main() -> None:
     inject_styles()
 
@@ -149,31 +132,16 @@ def main() -> None:
     )
 
     st.sidebar.header("Run Controls")
-    camera_backend_options = ["Browser camera (snapshot)", "Browser camera (WebRTC)"]
-    if supports_webcam_mode():
-        camera_backend_options.append("Device camera (OpenCV)")
-    camera_backend = st.sidebar.selectbox("Camera backend", camera_backend_options, index=0)
-
     st.sidebar.subheader("Live Camera")
-    camera_index = 0
-    if camera_backend == "Device camera (OpenCV)":
-        camera_index = st.sidebar.number_input("Camera index", min_value=0, max_value=5, value=0, step=1)
+    camera_index = st.sidebar.number_input("Camera index", min_value=0, max_value=5, value=0, step=1)
 
-    default_process_every_n = 3 if camera_backend == "Browser camera (WebRTC)" else 1
-    process_every_n = st.sidebar.slider("Process every N frames", min_value=1, max_value=5, value=default_process_every_n, step=1)
+    process_every_n = st.sidebar.slider("Process every N frames", min_value=1, max_value=5, value=1, step=1)
     confidence = st.sidebar.slider("Confidence threshold", 0.1, 0.9, 0.45, 0.05)
     image_size = st.sidebar.selectbox("Inference size", [640, 768, 960], index=0)
     line_position = st.sidebar.slider("Counting line position", 0.2, 0.8, 0.5, 0.05)
     max_track_distance = st.sidebar.slider("Tracking distance", 20, 120, 60, 5)
 
-    guidance = (
-        "Use the snapshot camera mode for the most reliable browser camera access on Streamlit Cloud."
-        if camera_backend == "Browser camera (snapshot)"
-        else
-        "Allow browser camera permission and click Start in the camera panel below. WebRTC runs at lower resolution/FPS for stability."
-        if camera_backend == "Browser camera (WebRTC)"
-        else "Press Start detection to open the camera directly. Ensure no other app is using it."
-    )
+    guidance = "Press Start detection to open the camera directly. Ensure no other app is using it."
     st.sidebar.markdown(
         f"""
         <div class="small-note">
@@ -183,7 +151,7 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    run_button = camera_backend == "Device camera (OpenCV)" and st.sidebar.button("Start detection")
+    run_button = st.sidebar.button("Start detection")
     reset_button = st.sidebar.button("Reset counters")
 
     metrics_block = st.empty()
@@ -214,10 +182,8 @@ def main() -> None:
             <div class="hero-card">
                 <h3 style="margin-top:0;color:#f8fafc;">Dashboard Guide</h3>
                 <ol style="color:#cbd5e1;line-height:1.75;padding-left:1.2rem;">
-                    <li>Use Browser camera (snapshot) for the most reliable cloud camera access.</li>
-                    <li>Use Browser camera (WebRTC) only when your network allows STUN/TURN connectivity.</li>
                     <li>Set camera index and detection parameters in the sidebar.</li>
-                    <li>Use Start detection for OpenCV mode or Start in the WebRTC panel.</li>
+                    <li>Press Start detection to open the camera feed.</li>
                     <li>Review the live frame, counts, IDs, and crossing analytics.</li>
                 </ol>
             </div>
@@ -225,7 +191,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-    if camera_backend == "Device camera (OpenCV)" and not run_button:
+    if not run_button:
         st.info("Press Start detection to open the camera and run real-time tracking.")
         return
 
@@ -235,124 +201,6 @@ def main() -> None:
         st.error("Model download/load failed.")
         st.code(str(exc))
         st.info("Redeploy and retry. If this persists, check outbound internet access for GitHub/CDN URLs.")
-        return
-
-    if camera_backend == "Browser camera (snapshot)":
-        camera_image = st.camera_input("Browser camera snapshot", key="snapshot-camera")
-        if camera_image is None:
-            status_placeholder.info("Open camera and capture an image to run detection.")
-            return
-
-        image_bytes = np.frombuffer(camera_image.getvalue(), dtype=np.uint8)
-        frame = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
-        if frame is None:
-            st.error("Could not decode the captured image frame.")
-            return
-
-        annotated, stats = process_frame(
-            frame=frame,
-            model=model,
-            state=state,
-            confidence=confidence,
-            image_size=image_size,
-            line_position=line_position,
-            max_track_distance=max_track_distance,
-        )
-
-        frame_placeholder.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
-        st.session_state["last_stats"] = {
-            "frame_count": int(stats.get("frame_count", 0)),
-            "tracked_ids": len(state.active_ids),
-            "line_count": state.line_cross_count,
-            "fps": 0.0,
-        }
-        with metrics_block.container():
-            render_metrics(st.session_state["last_stats"])
-
-        status_placeholder.success("Processed current camera snapshot.")
-        return
-
-    if camera_backend == "Browser camera (WebRTC)":
-        if WEBRTC_IMPORT_ERROR is not None:
-            st.error("Browser camera dependencies failed to import.")
-            st.code(WEBRTC_IMPORT_ERROR)
-            st.info("Install streamlit-webrtc in requirements.txt and redeploy.")
-            return
-
-        webrtc_stats = {"frame_count": 0, "tracked_ids": 0, "line_count": 0, "fps": 0.0}
-        stats_lock = Lock()
-        fps_state = {"last_ts": time.perf_counter()}
-        runtime_state = {"frame_idx": 0, "last_error": ""}
-
-        def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
-            image = frame.to_ndarray(format="bgr24")
-            runtime_state["frame_idx"] += 1
-            should_process = runtime_state["frame_idx"] % process_every_n == 0
-
-            try:
-                if should_process:
-                    annotated, stats = process_frame(
-                        frame=image,
-                        model=model,
-                        state=state,
-                        confidence=confidence,
-                        image_size=image_size,
-                        line_position=line_position,
-                        max_track_distance=max_track_distance,
-                    )
-                else:
-                    annotated = image
-                    stats = {"frame_count": 0}
-
-                now = time.perf_counter()
-                elapsed = now - fps_state["last_ts"]
-                fps_state["last_ts"] = now
-                fps = (1.0 / elapsed) if elapsed > 0 else 0.0
-
-                with stats_lock:
-                    webrtc_stats["frame_count"] = int(stats.get("frame_count", 0))
-                    webrtc_stats["tracked_ids"] = len(state.active_ids)
-                    webrtc_stats["line_count"] = state.line_cross_count
-                    webrtc_stats["fps"] = fps
-                    runtime_state["last_error"] = ""
-
-                return av.VideoFrame.from_ndarray(annotated, format="bgr24")
-            except Exception as exc:  # pragma: no cover - runtime specific
-                with stats_lock:
-                    runtime_state["last_error"] = str(exc)
-                return av.VideoFrame.from_ndarray(image, format="bgr24")
-
-        with left_col:
-            webrtc_ctx = webrtc_streamer(
-                key="realtime-object-detection-webrtc",
-                mode=WebRtcMode.SENDRECV,
-                media_stream_constraints={
-                    "video": {
-                        "width": {"ideal": 640},
-                        "height": {"ideal": 360},
-                        "frameRate": {"ideal": 15, "max": 20},
-                    },
-                    "audio": False,
-                },
-                rtc_configuration={
-                    "iceServers": [
-                        {"urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"]}
-                    ]
-                },
-                video_frame_callback=video_frame_callback,
-                video_html_attrs={"autoPlay": True, "controls": False, "muted": True},
-                async_processing=True,
-            )
-
-        if webrtc_ctx.state.playing:
-            status_placeholder.caption("Browser camera is live. Detection overlay is running in real time.")
-            with stats_lock:
-                with metrics_block.container():
-                    render_metrics(webrtc_stats)
-                if runtime_state["last_error"]:
-                    st.warning(f"Frame processing warning: {runtime_state['last_error']}")
-        else:
-            status_placeholder.info("Click Start in the WebRTC panel to begin real-time detection.")
         return
 
     if platform.system() == "Windows":
@@ -374,15 +222,19 @@ def main() -> None:
             if not ok:
                 break
 
-            annotated, stats = process_frame(
-                frame=frame,
-                model=model,
-                state=state,
-                confidence=confidence,
-                image_size=image_size,
-                line_position=line_position,
-                max_track_distance=max_track_distance,
-            )
+            if frame_counter % process_every_n == 0:
+                annotated, stats = process_frame(
+                    frame=frame,
+                    model=model,
+                    state=state,
+                    confidence=confidence,
+                    image_size=image_size,
+                    line_position=line_position,
+                    max_track_distance=max_track_distance,
+                )
+            else:
+                annotated = frame
+                stats = {"class_counts": Counter(), "frame_count": 0}
 
             frame_counter += 1
             frame_histogram.update(stats["class_counts"])
