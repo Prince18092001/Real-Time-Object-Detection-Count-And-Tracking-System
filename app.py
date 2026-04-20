@@ -239,7 +239,14 @@ def main() -> None:
         st.info("Select a source and press Start detection to run the project from this dashboard.")
         return
 
-    model = load_model()
+    try:
+        model = load_model()
+    except Exception as exc:
+        st.error("Model download/load failed.")
+        st.code(str(exc))
+        st.info("Redeploy and retry. If this persists, check outbound internet access for GitHub/CDN URLs.")
+        return
+
     capture = None
     temp_path: Path | None = None
 

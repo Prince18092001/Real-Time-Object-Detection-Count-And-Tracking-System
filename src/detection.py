@@ -4,7 +4,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from urllib.request import urlretrieve
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import cv2
 import numpy as np
@@ -37,8 +38,14 @@ MODEL_DIR = Path("models")
 PROTO_PATH = MODEL_DIR / "MobileNetSSD_deploy.prototxt"
 WEIGHTS_PATH = MODEL_DIR / "MobileNetSSD_deploy.caffemodel"
 
-PROTO_URL = "https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNetSSD_deploy.prototxt"
-WEIGHTS_URL = "https://github.com/chuanqi305/MobileNet-SSD/raw/master/MobileNetSSD_deploy.caffemodel"
+PROTO_URLS = (
+    "https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNetSSD_deploy.prototxt",
+    "https://cdn.jsdelivr.net/gh/chuanqi305/MobileNet-SSD/MobileNetSSD_deploy.prototxt",
+)
+WEIGHTS_URLS = (
+    "https://github.com/chuanqi305/MobileNet-SSD/raw/master/MobileNetSSD_deploy.caffemodel",
+    "https://cdn.jsdelivr.net/gh/chuanqi305/MobileNet-SSD/MobileNetSSD_deploy.caffemodel",
+)
 
 
 @dataclass
@@ -50,12 +57,32 @@ class DetectionState:
     next_track_id: int = 1
 
 
+def _download_file(urls: tuple[str, ...], target_path: Path) -> None:
+    errors: list[str] = []
+    for url in urls:
+        for _ in range(3):
+            try:
+                request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urlopen(request, timeout=30) as response, target_path.open("wb") as output:
+                    output.write(response.read())
+                if target_path.exists() and target_path.stat().st_size > 0:
+                    return
+            except (HTTPError, URLError, TimeoutError, OSError) as exc:
+                errors.append(f"{url}: {exc}")
+
+    joined = "\n".join(errors[-6:])
+    raise RuntimeError(
+        f"Failed to download required model file '{target_path.name}'.\n"
+        f"Please check internet access and retry.\n{joined}"
+    )
+
+
 def _ensure_model_files() -> None:
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     if not PROTO_PATH.exists():
-        urlretrieve(PROTO_URL, PROTO_PATH)
+        _download_file(PROTO_URLS, PROTO_PATH)
     if not WEIGHTS_PATH.exists():
-        urlretrieve(WEIGHTS_URL, WEIGHTS_PATH)
+        _download_file(WEIGHTS_URLS, WEIGHTS_PATH)
 
 
 @lru_cache(maxsize=1)
