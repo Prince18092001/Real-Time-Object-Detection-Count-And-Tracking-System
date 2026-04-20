@@ -3,6 +3,7 @@ from __future__ import annotations
 import platform
 from collections import Counter
 
+import numpy as np
 import streamlit as st
 
 CV2_IMPORT_ERROR: str | None = None
@@ -141,7 +142,11 @@ def main() -> None:
     line_position = st.sidebar.slider("Counting line position", 0.2, 0.8, 0.5, 0.05)
     max_track_distance = st.sidebar.slider("Tracking distance", 20, 120, 60, 5)
 
-    guidance = "Press Start detection to open the camera directly. Ensure no other app is using it."
+    guidance = (
+        "Use Capture in the browser camera widget, then click Start detection to process the frame."
+        if platform.system() != "Windows"
+        else "Press Start detection to open the camera directly. Ensure no other app is using it."
+    )
     st.sidebar.markdown(
         f"""
         <div class="small-note">
@@ -201,6 +206,40 @@ def main() -> None:
         st.error("Model download/load failed.")
         st.code(str(exc))
         st.info("Redeploy and retry. If this persists, check outbound internet access for GitHub/CDN URLs.")
+        return
+
+    if platform.system() != "Windows":
+        camera_image = st.camera_input("Browser camera", key="browser-camera")
+        if camera_image is None:
+            status_placeholder.info("Open browser camera and capture an image, then press Start detection.")
+            return
+
+        image_bytes = np.frombuffer(camera_image.getvalue(), dtype=np.uint8)
+        frame = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+        if frame is None:
+            st.error("Could not decode the captured browser camera frame.")
+            return
+
+        annotated, stats = process_frame(
+            frame=frame,
+            model=model,
+            state=state,
+            confidence=confidence,
+            image_size=image_size,
+            line_position=line_position,
+            max_track_distance=max_track_distance,
+        )
+
+        frame_placeholder.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
+        st.session_state["last_stats"] = {
+            "frame_count": int(stats.get("frame_count", 0)),
+            "tracked_ids": len(state.active_ids),
+            "line_count": state.line_cross_count,
+            "fps": 0.0,
+        }
+        with metrics_block.container():
+            render_metrics(st.session_state["last_stats"])
+        status_placeholder.success("Browser camera frame processed.")
         return
 
     if platform.system() == "Windows":
